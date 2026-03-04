@@ -1,0 +1,15 @@
+name: live_proxy
+description: Proxy API that returns simplified device live log payloads.
+version: 1.0.0
+# repository: https://github.com/my_org/my_repo
+
+environment:
+  sdk: ^3.10.0
+
+dependencies:
+  http: ^1.6.0
+  shelf: ^1.4.2
+  shelf_router: ^1.1.4
+
+dev_dependencies:
+  lints: ^6.0.0

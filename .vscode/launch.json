@@ -1,0 +1,25 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "mobile_apk",
+      "request": "launch",
+      "type": "dart",
+      "program": "apps/mobile_apk/lib/main.dart",
+      "args": [
+        "--dart-define", "SUPABASE_URL=https://zvjiqzdkylwarykhbzsg.supabase.co",
+        "--dart-define", "SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inp2amlxemRreWx3YXJ5a2hienNnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjQ3Mjg4MjMsImV4cCI6MjA4MDMwNDgyM30.1wjMkuR-IEmwmbwSjwd7V8T6nK20e7q4mr1kZrkBe_w"
+      ]
+    },
+    {
+      "name": "fill_trigger_app",
+      "request": "launch",
+      "type": "dart",
+      "program": "lib/main.dart",
+      "args": [
+        "--dart-define", "SUPABASE_URL=https://zvjiqzdkylwarykhbzsg.supabase.co",
+        "--dart-define", "SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inp2amlxemRreWx3YXJ5a2hienNnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjQ3Mjg4MjMsImV4cCI6MjA4MDMwNDgyM30.1wjMkuR-IEmwmbwSjwd7V8T6nK20e7q4mr1kZrkBe_w"
+      ]
+    }
+  ]
+}
