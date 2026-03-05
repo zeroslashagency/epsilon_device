@@ -1,7 +1,7 @@
 {
   "rewrites": [
-    { "source": "/v2/devices", "destination": "/api/v2/devices" },
-    { "source": "/v2/triggers", "destination": "/api/v2/triggers" }
+    { "source": "/v2/devices", "destination": "/api/devices.js" },
+    { "source": "/v2/triggers", "destination": "/api/triggers.js" }
   ],
   "headers": [
     {
