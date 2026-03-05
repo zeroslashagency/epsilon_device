@@ -1,13 +1,20 @@
 const { createClient } = require('@supabase/supabase-js')
 
-const supabaseUrl = process.env.VITE_SUPABASE_URL
-const supabaseKey = process.env.VITE_SUPABASE_ANON_KEY
+let supabase = null
 
-if (!supabaseUrl || !supabaseKey) {
-  throw new Error('Missing Supabase environment variables')
+function getSupabase() {
+  if (!supabase) {
+    const supabaseUrl = process.env.VITE_SUPABASE_URL
+    const supabaseKey = process.env.VITE_SUPABASE_ANON_KEY
+    
+    if (!supabaseUrl || !supabaseKey) {
+      throw new Error('Missing Supabase environment variables')
+    }
+    
+    supabase = createClient(supabaseUrl, supabaseKey)
+  }
+  return supabase
 }
-
-const supabase = createClient(supabaseUrl, supabaseKey)
 
 module.exports = async (req, res) => {
   res.setHeader('Access-Control-Allow-Credentials', 'true')
@@ -27,7 +34,7 @@ module.exports = async (req, res) => {
   try {
     const { device } = req.query
     
-    let query = supabase
+    let query = getSupabase()
       .from('feature_fill_trigger_events')
       .select('*')
       .order('triggered_at', { ascending: false })

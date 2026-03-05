@@ -32,7 +32,7 @@ module.exports = async (req, res) => {
   }
 
   try {
-    const { data, error } = await supabase
+    const { data, error } = await getSupabase()
       .from('device_status')
       .select('*')
       .order('updated_at', { ascending: false })
