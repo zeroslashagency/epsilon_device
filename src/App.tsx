@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo } from 'react'
+import { useEffect, useState } from 'react'
 import { Activity, Droplets, BatteryFull, BatteryMedium, BatteryLow, AlertTriangle, Wifi, WifiOff } from 'lucide-react'
 import { supabase } from './lib/supabase'
 
