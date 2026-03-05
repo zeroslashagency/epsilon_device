@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react'
-import { Activity, Droplets, BatteryFull, BatteryMedium, BatteryLow, AlertTriangle, Wifi, WifiOff } from 'lucide-react'
+import { useEffect, useState, useCallback } from 'react'
+import { Activity, Droplets, BatteryFull, BatteryMedium, BatteryLow, AlertTriangle, Wifi, WifiOff, RefreshCw } from 'lucide-react'
 import { supabase } from './lib/supabase'
 
 interface DeviceStatusRow {
@@ -17,12 +17,17 @@ interface FillTriggerEvent {
   triggered_at: string
 }
 
+interface ThresholdSetting {
+  device_id: string
+  threshold_percent: number
+}
+
 interface DeviceState {
   id: string
   battery_level: number | null
   last_sync: string | null
   status: string | null
-  latest_trigger: FillTriggerEvent | null
+  threshold_percent: number | null
 }
 
 // Mobile app pings every 10s. If we don't hear from it in 30s, consider it offline.
@@ -33,6 +38,8 @@ function App() {
   const [selectedDeviceId, setSelectedDeviceId] = useState<string | null>(null)
   const [globalError, setGlobalError] = useState<string | null>(null)
   const [now, setNow] = useState(Date.now())
+  const [isRefreshing, setIsRefreshing] = useState(false)
+  const [allTriggers, setAllTriggers] = useState<FillTriggerEvent[]>([])
 
   // Timer to continuously force UI updates for the "Live / Offline" indicator
   useEffect(() => {
@@ -54,7 +61,7 @@ function App() {
 
         if (statusError) throw statusError
 
-        // 2. Fetch the latest trigger event for each device
+        // 2. Fetch all trigger events for history
         const { data: triggerData, error: triggerError } = await supabase
           .from('feature_fill_trigger_events')
           .select('*')
@@ -62,24 +69,33 @@ function App() {
 
         if (triggerError) throw triggerError
 
+        // 3. Fetch threshold settings for all devices
+        const { data: thresholdData, error: thresholdError } = await supabase
+          .from('feature_fill_trigger_settings')
+          .select('*')
+
+        if (thresholdError) throw thresholdError
+
         if (!isMounted) return
 
         const newDevices: Record<string, DeviceState> = {}
         const sData = (statusData || []) as DeviceStatusRow[]
         const tData = (triggerData || []) as FillTriggerEvent[]
+        const thData = (thresholdData || []) as ThresholdSetting[]
 
         for (const row of sData) {
-          const latestTrigger = tData.find(t => t.device_id === row.device_id) || null
+          const thresholdSetting = thData.find(t => t.device_id === row.device_id)
           newDevices[row.device_id] = {
             id: row.device_id,
             battery_level: row.battery_level,
             last_sync: row.last_sync,
             status: row.status,
-            latest_trigger: latestTrigger
+            threshold_percent: thresholdSetting?.threshold_percent ?? null
           }
         }
 
         setDevices(newDevices)
+        setAllTriggers(tData)
 
         // Select first device if none selected
         setDevices(current => {
@@ -113,8 +129,7 @@ function App() {
             battery_level: updatedRow.battery_level,
             last_sync: updatedRow.last_sync,
             status: updatedRow.status,
-            // keep existing trigger
-            latest_trigger: prev[updatedRow.device_id]?.latest_trigger || null
+            threshold_percent: prev[updatedRow.device_id]?.threshold_percent ?? null
           }
         }))
       })
@@ -126,14 +141,7 @@ function App() {
         const newTrigger = payload.new as FillTriggerEvent
         if (!newTrigger.device_id) return
 
-        setDevices(prev => ({
-          ...prev,
-          [newTrigger.device_id]: {
-            ...prev[newTrigger.device_id],
-            id: newTrigger.device_id, // in case it triggered before status ping
-            latest_trigger: newTrigger
-          }
-        }))
+        setAllTriggers(prev => [newTrigger, ...prev])
       })
       .subscribe()
 
@@ -146,6 +154,56 @@ function App() {
 
   const deviceList = Object.values(devices)
   const selectedDevice = selectedDeviceId ? devices[selectedDeviceId] : null
+  
+  // Get triggers for selected device
+  const selectedDeviceTriggers = selectedDeviceId 
+    ? allTriggers.filter(t => t.device_id === selectedDeviceId)
+    : []
+
+  // Refresh handler
+  const handleRefresh = useCallback(async () => {
+    setIsRefreshing(true)
+    try {
+      // Re-fetch all data
+      const { data: statusData } = await supabase
+        .from('device_status')
+        .select('*')
+        .order('updated_at', { ascending: false })
+      
+      const { data: triggerData } = await supabase
+        .from('feature_fill_trigger_events')
+        .select('*')
+        .order('triggered_at', { ascending: false })
+      
+      const { data: thresholdData } = await supabase
+        .from('feature_fill_trigger_settings')
+        .select('*')
+
+      const newDevices: Record<string, DeviceState> = {}
+      const sData = (statusData || []) as DeviceStatusRow[]
+      const tData = (triggerData || []) as FillTriggerEvent[]
+      const thData = (thresholdData || []) as ThresholdSetting[]
+
+      for (const row of sData) {
+        const thresholdSetting = thData.find(t => t.device_id === row.device_id)
+        newDevices[row.device_id] = {
+          id: row.device_id,
+          battery_level: row.battery_level,
+          last_sync: row.last_sync,
+          status: row.status,
+          threshold_percent: thresholdSetting?.threshold_percent ?? null
+        }
+      }
+
+      setDevices(newDevices)
+      setAllTriggers(tData)
+      setGlobalError(null)
+    } catch (err: any) {
+      setGlobalError(err.message)
+    } finally {
+      setIsRefreshing(false)
+    }
+  }, [])
 
   // Helpers
   const isOnline = (lastSync: string | null) => {
@@ -164,12 +222,24 @@ function App() {
     <div className="min-h-screen bg-[#0A0C10] text-white flex flex-col items-center pt-8 pb-20 font-sans">
       <div className="w-full max-w-5xl px-6">
         
-        <header className="mb-10 text-center">
-          <h1 className="text-3xl font-light text-gray-200 tracking-wide flex items-center justify-center gap-3">
-            <Activity className="w-8 h-8 text-blue-500" />
-            Unified Device Monitor
-          </h1>
-          <p className="text-sm text-gray-500 mt-2">Real-time battery tracking & trigger alerts</p>
+        <header className="mb-10">
+          <div className="flex justify-between items-start">
+            <div className="text-center flex-1">
+              <h1 className="text-3xl font-light text-gray-200 tracking-wide flex items-center justify-center gap-3">
+                <Activity className="w-8 h-8 text-blue-500" />
+                Unified Device Monitor
+              </h1>
+              <p className="text-sm text-gray-500 mt-2">Real-time battery tracking & trigger alerts</p>
+            </div>
+            <button
+              onClick={handleRefresh}
+              disabled={isRefreshing}
+              className="flex items-center gap-2 px-4 py-2 bg-[#12151C] border border-gray-700 rounded-lg hover:border-blue-500/50 hover:bg-[#1D222E] transition-all duration-200 disabled:opacity-50"
+            >
+              <RefreshCw className={`w-4 h-4 ${isRefreshing ? 'animate-spin' : ''}`} />
+              <span className="text-sm">Refresh</span>
+            </button>
+          </div>
         </header>
 
         {globalError && (
@@ -187,60 +257,44 @@ function App() {
             </p>
           </div>
         ) : (
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+          <div className="flex gap-8">
             
             {/* Sidebar: Device List */}
-            <div className="col-span-1 flex flex-col gap-3">
+            <div className="w-72 flex flex-col gap-2 flex-shrink-0">
               <h2 className="text-xs font-bold tracking-widest text-gray-500 uppercase ml-2 mb-2">Connected Devices</h2>
               
               {deviceList.map(device => {
-                const online = isOnline(device.last_sync)
                 const isSelected = selectedDeviceId === device.id
                 
                 return (
                   <button
                     key={device.id}
                     onClick={() => setSelectedDeviceId(device.id)}
-                    className={`flex items-center justify-between p-4 rounded-xl transition-all duration-200 border text-left ${
+                    className={`flex items-center justify-between p-3 rounded-lg transition-all duration-200 border text-left ${
                       isSelected 
                         ? 'bg-[#1D222E] border-blue-500/50 shadow-[0_0_15px_rgba(59,130,246,0.1)]' 
                         : 'bg-[#12151C] border-gray-800 hover:border-gray-600'
                     }`}
                   >
-                    <div>
-                      <h3 className={`font-semibold ${isSelected ? 'text-blue-100' : 'text-gray-300'}`}>
-                        {device.id}
-                      </h3>
-                      <div className="flex items-center gap-2 mt-1">
-                        <div className={`w-2 h-2 rounded-full ${online ? 'bg-emerald-500 shadow-[0_0_5px_rgba(16,185,129,0.8)]' : 'bg-red-500'}`} />
-                        <span className="text-xs text-gray-500 font-medium">
-                          {online ? 'LIVE' : 'OFFLINE'}
-                        </span>
-                      </div>
-                    </div>
-                    <div className="text-right">
-                      <span className={`text-lg font-light ${device.battery_level && device.battery_level <= 20 ? 'text-red-400' : 'text-gray-400'}`}>
-                        {device.battery_level ?? '--'}%
-                      </span>
-                    </div>
+                    <span className={`font-semibold ${isSelected ? 'text-blue-100' : 'text-gray-300'}`}>
+                      {device.id}
+                    </span>
+                    <span className={`text-sm font-light ${device.battery_level && device.battery_level <= 20 ? 'text-red-400' : 'text-gray-400'}`}>
+                      {device.battery_level ?? '--'}%
+                    </span>
                   </button>
                 )
               })}
             </div>
 
             {/* Main Content: Selected Device Details */}
-            <div className="col-span-1 lg:col-span-2">
+            <div className="flex-1">
               {selectedDevice && (
-                <div className="bg-[#12151C] border border-gray-800 rounded-3xl p-8 shadow-xl relative overflow-hidden flex flex-col gap-8 h-full">
+                <div className="space-y-6">
                   
-                  {/* Header Row */}
-                  <div className="flex justify-between items-start border-b border-gray-800/50 pb-6">
-                    <div>
-                      <h2 className="text-2xl font-bold text-gray-100">{selectedDevice.id}</h2>
-                      <p className="text-sm text-gray-500 mt-1 font-mono">
-                        Last ping: {selectedDevice.last_sync ? new Date(selectedDevice.last_sync).toLocaleTimeString() : 'Never'}
-                      </p>
-                    </div>
+                  {/* Device Header */}
+                  <div className="flex justify-between items-center">
+                    <h2 className="text-2xl font-bold text-gray-100">{selectedDevice.id}</h2>
                     <div className={`px-4 py-2 rounded-full border flex items-center gap-2 ${
                       isOnline(selectedDevice.last_sync) 
                         ? 'bg-emerald-900/20 border-emerald-500/30 text-emerald-400' 
@@ -253,49 +307,69 @@ function App() {
                     </div>
                   </div>
 
-                  {/* Battery Status Row */}
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div className="bg-[#0A0C10] p-6 rounded-2xl border border-gray-800/50 flex flex-col justify-center">
-                      <p className="text-xs font-bold tracking-widest text-gray-500 uppercase mb-4">Live Battery Level</p>
-                      <div className="flex items-center gap-4">
-                        {getBatteryIcon(selectedDevice.battery_level)}
-                        <div className="flex items-baseline gap-1">
-                          <span className="text-5xl font-light text-white">
-                            {selectedDevice.battery_level ?? '--'}
-                          </span>
-                          <span className="text-2xl text-gray-500">%</span>
-                        </div>
+                  {/* Live Battery Level Box */}
+                  <div className="bg-[#12151C] border border-gray-800 rounded-2xl p-8">
+                    <p className="text-xs font-bold tracking-widest text-gray-500 uppercase mb-6">Live Battery Level</p>
+                    <div className="flex items-center gap-6">
+                      {getBatteryIcon(selectedDevice.battery_level)}
+                      <div className="flex items-baseline gap-1">
+                        <span className="text-6xl font-light text-white">
+                          {selectedDevice.battery_level ?? '--'}
+                        </span>
+                        <span className="text-3xl text-gray-500">%</span>
                       </div>
                     </div>
+                    
+                    {selectedDevice.threshold_percent !== null && (
+                      <div className="mt-6 pt-6 border-t border-gray-800/50">
+                        <p className="text-sm text-gray-400">
+                          Alert Threshold: <span className="text-orange-400 font-semibold">{selectedDevice.threshold_percent}%</span>
+                        </p>
+                      </div>
+                    )}
+                    
+                    <p className="mt-4 text-sm text-gray-500">
+                      Last updated: {selectedDevice.last_sync 
+                        ? new Date(selectedDevice.last_sync).toLocaleString() 
+                        : 'Never'}
+                    </p>
+                  </div>
 
-                    {/* Trigger Event Section INSIDE the device box */}
-                    <div className={`p-6 rounded-2xl border relative overflow-hidden ${
-                      selectedDevice.latest_trigger 
-                        ? 'bg-red-900/10 border-red-900/30' 
-                        : 'bg-[#0A0C10] border-gray-800/50'
-                    }`}>
-                      
-                      {selectedDevice.latest_trigger && (
-                         <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-red-500/0 via-red-500/50 to-red-500/0" />
-                      )}
-
+                  {/* Trigger Log Section */}
+                  <div className={`bg-[#12151C] border rounded-2xl overflow-hidden ${
+                    selectedDeviceTriggers.length > 0 
+                      ? 'border-red-900/30' 
+                      : 'border-gray-800'
+                  }`}>
+                    {selectedDeviceTriggers.length > 0 && (
+                      <div className="h-1 bg-gradient-to-r from-red-500/0 via-red-500/50 to-red-500/0" />
+                    )}
+                    
+                    <div className="p-6">
                       <p className="text-xs font-bold tracking-widest text-gray-500 uppercase mb-4 flex items-center gap-2">
-                        {selectedDevice.latest_trigger ? <AlertTriangle className="w-4 h-4 text-red-400" /> : <Droplets className="w-4 h-4 text-blue-400" />}
-                        Latest Threshold Trigger
+                        {selectedDeviceTriggers.length > 0 ? <AlertTriangle className="w-4 h-4 text-red-400" /> : <Droplets className="w-4 h-4 text-blue-400" />}
+                        Log of Trigger
                       </p>
 
-                      {selectedDevice.latest_trigger ? (
-                        <div>
-                          <p className="text-sm text-gray-400 mb-2">
-                            Triggered because battery dropped to <strong className="text-red-400">{selectedDevice.latest_trigger.fill_percent}%</strong> 
-                            (Threshold: {selectedDevice.latest_trigger.threshold_percent}%)
-                          </p>
-                          <div className="inline-block mt-2 bg-black/40 px-3 py-1.5 rounded text-xs text-gray-300 font-mono border border-gray-800">
-                            {new Date(selectedDevice.latest_trigger.triggered_at).toLocaleString()}
-                          </div>
+                      {selectedDeviceTriggers.length > 0 ? (
+                        <div className="max-h-64 overflow-y-auto space-y-3 pr-2">
+                          {selectedDeviceTriggers.map((trigger) => (
+                            <div key={trigger.id} className="flex items-start gap-3 p-3 bg-[#0A0C10] rounded-lg border border-gray-800/50">
+                              <div className="w-2 h-2 rounded-full bg-red-500 mt-2 flex-shrink-0" />
+                              <div className="flex-1">
+                                <p className="text-sm text-gray-300">
+                                  Battery dropped to <span className="text-red-400 font-semibold">{trigger.fill_percent}%</span>
+                                  <span className="text-gray-500"> (Threshold: {trigger.threshold_percent}%)</span>
+                                </p>
+                                <p className="text-xs text-gray-500 mt-1 font-mono">
+                                  {new Date(trigger.triggered_at).toLocaleString()}
+                                </p>
+                              </div>
+                            </div>
+                          ))}
                         </div>
                       ) : (
-                        <p className="text-sm text-gray-500 italic mt-2">
+                        <p className="text-sm text-gray-500 italic">
                           No trigger events recorded for this device yet. Set a threshold in the mobile app to enable auto-triggers.
                         </p>
                       )}
