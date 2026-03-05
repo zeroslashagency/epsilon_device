@@ -1,13 +1,15 @@
-import { createClient } from '@supabase/supabase-js'
-import type { VercelRequest, VercelResponse } from '@vercel/node'
+const { createClient } = require('@supabase/supabase-js')
 
-const supabaseUrl = process.env.VITE_SUPABASE_URL || ''
-const supabaseKey = process.env.VITE_SUPABASE_ANON_KEY || ''
+const supabaseUrl = process.env.VITE_SUPABASE_URL
+const supabaseKey = process.env.VITE_SUPABASE_ANON_KEY
+
+if (!supabaseUrl || !supabaseKey) {
+  throw new Error('Missing Supabase environment variables')
+}
 
 const supabase = createClient(supabaseUrl, supabaseKey)
 
-export default async function handler(req: VercelRequest, res: VercelResponse) {
-  // Enable CORS
+module.exports = async (req, res) => {
   res.setHeader('Access-Control-Allow-Credentials', 'true')
   res.setHeader('Access-Control-Allow-Origin', '*')
   res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS')
@@ -30,7 +32,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       .select('*')
       .order('triggered_at', { ascending: false })
 
-    // Filter by device if provided
     if (device && typeof device === 'string') {
       query = query.eq('device_id', device)
     }
@@ -39,7 +40,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     if (error) throw error
 
-    // Map to clean format
     const triggers = (data || []).map(trigger => ({
       id: trigger.id,
       deviceId: trigger.device_id,
@@ -51,7 +51,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }))
 
     return res.status(200).json(triggers)
-  } catch (error: any) {
+  } catch (error) {
+    console.error('API Error:', error)
     return res.status(500).json({ 
       error: 'Failed to fetch triggers',
       message: error.message 

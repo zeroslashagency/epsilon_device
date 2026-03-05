@@ -1,13 +1,22 @@
-import { createClient } from '@supabase/supabase-js'
-import type { VercelRequest, VercelResponse } from '@vercel/node'
+const { createClient } = require('@supabase/supabase-js')
 
-const supabaseUrl = process.env.VITE_SUPABASE_URL || ''
-const supabaseKey = process.env.VITE_SUPABASE_ANON_KEY || ''
+let supabase = null
 
-const supabase = createClient(supabaseUrl, supabaseKey)
+function getSupabase() {
+  if (!supabase) {
+    const supabaseUrl = process.env.VITE_SUPABASE_URL
+    const supabaseKey = process.env.VITE_SUPABASE_ANON_KEY
+    
+    if (!supabaseUrl || !supabaseKey) {
+      throw new Error('Missing Supabase environment variables')
+    }
+    
+    supabase = createClient(supabaseUrl, supabaseKey)
+  }
+  return supabase
+}
 
-export default async function handler(req: VercelRequest, res: VercelResponse) {
-  // Enable CORS
+module.exports = async (req, res) => {
   res.setHeader('Access-Control-Allow-Credentials', 'true')
   res.setHeader('Access-Control-Allow-Origin', '*')
   res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS')
@@ -40,7 +49,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }))
 
     return res.status(200).json(devices)
-  } catch (error: any) {
+  } catch (error) {
+    console.error('API Error:', error)
     return res.status(500).json({ 
       error: 'Failed to fetch devices',
       message: error.message 
