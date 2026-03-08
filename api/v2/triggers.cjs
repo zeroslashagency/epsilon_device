@@ -47,11 +47,28 @@ module.exports = async (req, res) => {
 
     if (error) throw error
 
+    const normalizeTriggerType = (trigger) => {
+      if (trigger.trigger_type === 'low' || trigger.trigger_type === 'high') {
+        return trigger.trigger_type
+      }
+
+      if (trigger.background_color === 'green') {
+        return 'high'
+      }
+
+      if (trigger.background_color === 'red') {
+        return 'low'
+      }
+
+      return null
+    }
+
     const triggers = (data || []).map(trigger => ({
       id: trigger.id,
       deviceId: trigger.device_id,
       batteryLevel: trigger.fill_percent,
       threshold: trigger.threshold_percent,
+      triggerType: normalizeTriggerType(trigger),
       triggeredAt: trigger.triggered_at,
       backgroundColor: trigger.background_color,
       deviceType: trigger.device_type

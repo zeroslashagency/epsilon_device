@@ -14,12 +14,15 @@ interface FillTriggerEvent {
   device_id: string
   fill_percent: number
   threshold_percent: number
+  trigger_type: 'low' | 'high'
   triggered_at: string
 }
 
 interface ThresholdSetting {
   device_id: string
   threshold_percent: number
+  low_threshold_percent: number
+  high_threshold_percent: number
 }
 
 interface DeviceState {
@@ -28,6 +31,8 @@ interface DeviceState {
   last_sync: string | null
   status: string | null
   threshold_percent: number | null
+  low_threshold_percent: number | null
+  high_threshold_percent: number | null
 }
 
 // Mobile app pings every 10s. If we don't hear from it in 30s, consider it offline.
@@ -90,7 +95,9 @@ function App() {
             battery_level: row.battery_level,
             last_sync: row.last_sync,
             status: row.status,
-            threshold_percent: thresholdSetting?.threshold_percent ?? null
+            threshold_percent: thresholdSetting?.threshold_percent ?? null,
+            low_threshold_percent: thresholdSetting?.low_threshold_percent ?? null,
+            high_threshold_percent: thresholdSetting?.high_threshold_percent ?? null
           }
         }
 
@@ -129,7 +136,9 @@ function App() {
             battery_level: updatedRow.battery_level,
             last_sync: updatedRow.last_sync,
             status: updatedRow.status,
-            threshold_percent: prev[updatedRow.device_id]?.threshold_percent ?? null
+            threshold_percent: prev[updatedRow.device_id]?.threshold_percent ?? null,
+            low_threshold_percent: prev[updatedRow.device_id]?.low_threshold_percent ?? null,
+            high_threshold_percent: prev[updatedRow.device_id]?.high_threshold_percent ?? null
           }
         }))
       })
@@ -191,7 +200,9 @@ function App() {
           battery_level: row.battery_level,
           last_sync: row.last_sync,
           status: row.status,
-          threshold_percent: thresholdSetting?.threshold_percent ?? null
+          threshold_percent: thresholdSetting?.threshold_percent ?? null,
+          low_threshold_percent: thresholdSetting?.low_threshold_percent ?? null,
+          high_threshold_percent: thresholdSetting?.high_threshold_percent ?? null
         }
       }
 
@@ -320,11 +331,24 @@ function App() {
                       </div>
                     </div>
                     
-                    {selectedDevice.threshold_percent !== null && (
+                    {/* Dual Threshold Display */}
+                    {(selectedDevice.low_threshold_percent !== null || selectedDevice.high_threshold_percent !== null) && (
                       <div className="mt-6 pt-6 border-t border-gray-800/50">
-                        <p className="text-sm text-gray-400">
-                          Alert Threshold: <span className="text-orange-400 font-semibold">{selectedDevice.threshold_percent}%</span>
-                        </p>
+                        <p className="text-xs font-bold tracking-widest text-gray-500 uppercase mb-3">Alert Thresholds</p>
+                        <div className="flex gap-4">
+                          {selectedDevice.low_threshold_percent !== null && (
+                            <div className="flex items-center gap-2">
+                              <span className="text-sm text-gray-400">Low:</span>
+                              <span className="text-sm text-red-400 font-semibold">{selectedDevice.low_threshold_percent}%</span>
+                            </div>
+                          )}
+                          {selectedDevice.high_threshold_percent !== null && (
+                            <div className="flex items-center gap-2">
+                              <span className="text-sm text-gray-400">High:</span>
+                              <span className="text-sm text-emerald-400 font-semibold">{selectedDevice.high_threshold_percent}%</span>
+                            </div>
+                          )}
+                        </div>
                       </div>
                     )}
                     
@@ -355,10 +379,11 @@ function App() {
                         <div className="max-h-64 overflow-y-auto space-y-3 pr-2">
                           {selectedDeviceTriggers.map((trigger) => (
                             <div key={trigger.id} className="flex items-start gap-3 p-3 bg-[#0A0C10] rounded-lg border border-gray-800/50">
-                              <div className="w-2 h-2 rounded-full bg-red-500 mt-2 flex-shrink-0" />
+                              <div className={`w-2 h-2 rounded-full mt-2 flex-shrink-0 ${trigger.trigger_type === 'low' ? 'bg-red-500' : 'bg-emerald-500'}`} />
                               <div className="flex-1">
                                 <p className="text-sm text-gray-300">
-                                  Battery dropped to <span className="text-red-400 font-semibold">{trigger.fill_percent}%</span>
+                                  {trigger.trigger_type === 'low' ? 'Low' : 'High'} battery: 
+                                  <span className={`font-semibold ${trigger.trigger_type === 'low' ? 'text-red-400' : 'text-emerald-400'}`}>{trigger.fill_percent}%</span>
                                   <span className="text-gray-500"> (Threshold: {trigger.threshold_percent}%)</span>
                                 </p>
                                 <p className="text-xs text-gray-500 mt-1 font-mono">
